@@ -82,4 +82,4 @@ reqcheck --input C:/my-input/job.json --output outputs/my-run --mode live --endp
 - vendor/lissa：按固定提交拉取的上游依赖。
 - [方法与文件对应](docs/ARCHITECTURE.md)、[接口](INTERFACES.md)、[输出设计](docs/OUTPUT-DESIGN.md)、[参考与许可证边界](THIRD_PARTY.md)。
 
-本仓库只发布必要源码和运行文档，不含本地测试 demo、测试报告、论文、课件、PPT、环境或缓存。LiSSA 仅复用部分组件，MCeT 只参考方法，不能把上游论文指标当作本项目指标。
+
