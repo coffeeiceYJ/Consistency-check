@@ -1,20 +1,65 @@
 """Typed scope policy. It checks declared dimensions, not natural-language truth."""
 from copy import deepcopy
+import re
+from .issues import validate_issues
 
 DIMENSIONS={
     'function':'功能目标', 'actor_boundary':'角色与系统边界', 'authorization':'角色权限',
     'structure':'对象属性关联', 'data_constraint':'数量和数据约束',
     'behavior_order':'行为先后', 'branch_path':'条件分支及异常路径',
-    'state_transition':'状态迁移', 'timing':'时限和时间事件',
+    'state_transition':'状态迁移结构', 'business_result':'明确表达的业务结果', 'timing':'时限和时间事件',
 }
 CAPABILITIES={
     'usecase':{'function','actor_boundary','authorization'},
     'class':{'structure','data_constraint'},
-    'activity':{'function','authorization','data_constraint','behavior_order','branch_path','timing'},
-    'state':{'function','authorization','data_constraint','behavior_order','branch_path','state_transition','timing'},
-    'sequence':{'function','actor_boundary','authorization','data_constraint','behavior_order','branch_path','timing'},
-    'system_sequence':{'function','actor_boundary','authorization','data_constraint','behavior_order','branch_path','timing'},
+    'activity':{'function','authorization','data_constraint','behavior_order','branch_path','business_result','timing'},
+    'state':{'function','authorization','data_constraint','behavior_order','branch_path','state_transition','business_result','timing'},
+    'sequence':{'function','actor_boundary','authorization','data_constraint','behavior_order','branch_path','business_result','timing'},
+    'system_sequence':{'function','actor_boundary','authorization','data_constraint','behavior_order','branch_path','business_result','timing'},
 }
+
+
+def normalize_explicit_results(response, requirements, models):
+    """Preserve an evidenced result claim, not a demand for missing state structure.
+
+    This verifies source/syntax only. Whether the claimed contradiction follows
+    from that source still requires semantic review, just like other issues.
+    """
+    errors=[]; available={m.id:m for m in models}
+    raw=response.get('issues',[])
+    if not isinstance(raw,list): return errors
+    rows=response.get('assessments',[])
+    for index,issue in enumerate(raw):
+        if not isinstance(issue,dict) or issue.get('dimension')!='state_transition': continue
+        mid=issue.get('model_id'); model=available.get(mid) if isinstance(mid,str) else None
+        if not model or model.diagram_type not in ('system_sequence','sequence','activity'): continue
+        if issue.get('type') not in ('表达错误','跨图冲突'): continue
+        refs=issue.get('check_ids'); rids=issue.get('requirement_ids')
+        if not isinstance(refs,list) or not isinstance(rids,list): continue
+        valid,rejected=validate_issues([issue],requirements,models)
+        if rejected:
+            errors.append({'index':index,'reason':'Explicit business result lacks valid location/source evidence'})
+            continue
+        location=valid[0]['location']
+        lines=model.text.splitlines()[location['start_line']-model.start_line:location['end_line']-model.start_line+1]
+        if model.diagram_type=='activity':
+            behavioral=any(re.match(r'^\s*:.+;\s*$',line) for line in lines)
+        else:
+            behavioral=any(re.match(r'^\s*(?:"[^"]+"|[\w.]+)\s*(?:[-.]+>>?|<<?[-.]+)\s*(?:"[^"]+"|[\w.]+)\s*:\s*\S',line) for line in lines)
+        if not behavioral: continue
+        changed=False
+        for row in rows:
+            if not isinstance(row,dict) or row.get('requirement_id') not in rids: continue
+            checks=row.get('checks',[])
+            if not isinstance(checks,list): continue
+            for c in checks:
+                if not isinstance(c,dict) or c.get('id') not in refs or c.get('dimension')!='state_transition': continue
+                c.update(declared_dimension='state_transition',dimension='business_result',
+                         dimension_source='verified-explicit-behavior',applicability='applicable',verdict='存在冲突',missing_content='')
+                changed=True
+        if changed:
+            issue.update(declared_dimension='state_transition',dimension='business_result',dimension_source='verified-explicit-behavior')
+    return errors
 
 def supports(model,dimension):
     if not isinstance(dimension,str) or dimension not in DIMENSIONS: return None
@@ -23,7 +68,8 @@ def supports(model,dimension):
 
 def policy(models):
     return {'dimensions':DIMENSIONS,'models':[{'model_id':m.id,'allowed_dimensions':sorted(CAPABILITIES.get(m.diagram_type,set())),
-        'unknown_type':m.diagram_type not in CAPABILITIES} for m in models]}
+        'unknown_type':m.diagram_type not in CAPABILITIES} for m in models],
+        'result_boundary':'business_result检查图中已明确表达的动作或响应结果；不因此要求补齐内部状态机。state_transition用于状态迁移结构，不能把全部业务结果都归为该维度。'}
 
 def all_outside(checks,models):
     return bool(checks) and all(all(supports(m,c['dimension']) is False for m in models) for c in checks)
@@ -34,6 +80,7 @@ def apply_policy(response, requirements, models):
     if not isinstance(result,dict): raise ValueError('Invalid response')
     rows=result.get('assessments')
     if not isinstance(rows,list): return result,decisions,exclusions,[{'reason':'Missing assessments for applicability'}]
+    errors.extend(normalize_explicit_results(result,requirements,models))
     reqs={r.id:r for r in requirements}; available={m.id:m for m in models}; checks_by_req={}
     for row in rows:
         if not isinstance(row,dict) or not isinstance(row.get('requirement_id'),str) or row['requirement_id'] not in reqs: continue

@@ -135,6 +135,7 @@ def reconcile_issues(passes, requirements, models):
     review = {'issues':[i for p in reviews for i in p.get('issues',[])],
               'dismissed_issues':[i for p in reviews for i in p.get('dismissed_issues',[])]}
     output, dismissed, errors, handled = [], [], [], set()
+    variants = {}
     for issue in merge_issues(review.get('issues', [])):
         origins = set(issue['origin_ids'])
         if issue['id'] in known:
@@ -143,6 +144,9 @@ def reconcile_issues(passes, requirements, models):
             errors.append('复核问题引用了未知来源问题ID。')
             continue
         covered = [known[o] for o in origins]
+        if any(i['model_id'] != issue['model_id'] or i['type'] != issue['type'] for i in covered):
+            errors.append('合并问题不能移除其他图或不同类型的旧问题。')
+            continue
         required = set(issue['requirement_ids']) | {r for i in covered for r in i['requirement_ids']}
         if not required.issubset({e['artifact_id'] for e in issue['evidence']}):
             errors.append('合并问题未保留全部需求依据。')
@@ -150,23 +154,53 @@ def reconcile_issues(passes, requirements, models):
         handled.update(origins)
         issue['status'] = '模型复核完成'
         issue['origin_ids'] = sorted(origins)
-        output.append(issue)
+        # Only explicit, identical source sets establish duplicate review versions.
+        # Never infer semantic equivalence merely from nearby locations or titles.
+        key = (issue['model_id'], issue['type'], tuple(sorted(origins))) if origins else ('new', issue['id'])
+        if key in variants:
+            prior = output[variants[key]]
+            issue['review_variant_ids'] = sorted(set(prior.get('review_variant_ids',[prior['id']])+[issue['id']]))
+            issue['requirement_ids'] = sorted(set(prior['requirement_ids']+issue['requirement_ids']))
+            for evidence in prior['evidence']:
+                if evidence not in issue['evidence']: issue['evidence'].append(evidence)
+            output[variants[key]] = issue
+        else:
+            variants[key] = len(output)
+            output.append(issue)
+    replacements = {variant: i for i in output for variant in i.get('review_variant_ids',[i['id']])}
+    seen_decisions = set()
     for decision in review.get('dismissed_issues', []):
         try:
             if not isinstance(decision, dict):
                 raise ValueError('Invalid dismissal')
             origins = decision.get('origin_ids')
-            if not isinstance(origins, list) or not origins or not all(isinstance(o, str) and o in known and o not in handled for o in origins):
+            if not isinstance(origins, list) or not origins or not all(isinstance(o, str) and o in known for o in origins):
                 raise ValueError('Unknown or conflicting dismissal origins')
+            action = decision.get('action')
+            if action not in ('false_positive','merge'):
+                raise ValueError('Explicit disposition action required')
             if not isinstance(decision.get('reason'), str) or not decision['reason'].strip():
                 raise ValueError('Missing dismissal reason')
             rids = {r for o in origins for r in known[o]['requirement_ids']}
             mids = {known[o]['model_id'] for o in origins if known[o]['model_id']}
             ev = checked_evidence(decision.get('evidence'), requirements, models, rids, mids)
-            dismissed.append({'origin_ids': origins, 'reason': decision['reason'], 'evidence': ev})
+            replacement = None
+            if action == 'merge':
+                replacement = replacements.get(decision.get('replacement_id'))
+                if (not replacement or not set(origins).issubset(replacement['origin_ids'])
+                    or any(known[o]['model_id'] != replacement['model_id'] for o in origins)):
+                    raise ValueError('Merge requires accepted replacement with matching origins')
+            elif any(o in handled for o in origins):
+                raise ValueError('Cannot dismiss a retained finding as false positive')
+            signature = (action,tuple(sorted(origins)),replacement and replacement['id'])
+            if signature in seen_decisions: continue
+            seen_decisions.add(signature)
+            entry = {'action':action,'origin_ids': origins, 'reason': decision['reason'], 'evidence': ev}
+            if replacement: entry['replacement_id'] = replacement['id']
+            dismissed.append(entry)
             handled.update(origins)
-        except ValueError:
-            errors.append('排除旧问题缺少有效来源ID、理由或原文证据，旧问题仍保留。')
+        except (ValueError,TypeError):
+            errors.append('排除/合并未通过校验：必须明确操作、提供有效证据；合并须指向已接纳且保留来源的问题。未处理的旧问题仍保留。')
     for oid, issue in known.items():
         if oid not in handled:
             issue['status'] = '待复核'

@@ -293,7 +293,7 @@ def check_scoped(request, retriever, client, progress=None, cancelled=None):
             'passes':passes,'diagnostics':diagnostics,'call_records':records,
             'inputs':[{'id':a.id,'text':a.text,'source':a.source(),'diagram_type':a.diagram_type,'sha256':hashlib.sha256(a.text.encode()).hexdigest()} for a in request.requirements+request.models],
             'provenance':{'version':'0.2.0','check_strategy':'candidate_first','prompt_version':prompts.VERSION,'mode':getattr(client,'provenance',{}).get('mode','injected-client-unverified'),
-                          'prompt_sha256':hashlib.sha256((prompts.SYSTEM+prompts.SCOPE_CONTRACT+prompts.REVERSE_TASK+json.dumps(prompts.TASKS,ensure_ascii=False)).encode()).hexdigest(),
+                          'prompt_sha256':hashlib.sha256((prompts.SYSTEM+prompts.SCOPE_CONTRACT+prompts.REVERSE_TASK+json.dumps({'tasks':prompts.TASKS,'profiles':prompts.PROFILES,'cross_view':prompts.CROSS_VIEW,'sources':prompts.SOURCES},ensure_ascii=False,sort_keys=True)).encode()).hexdigest(),
                           'retriever':getattr(retriever,'provenance',{}),'model':getattr(client,'provenance',{}),'calls':calls,'usage':getattr(client,'usage',{}),
                           'elapsed_seconds':round(time.monotonic()-start,3),'model_source_chars_sent':sum(r['model_chars'] for r in records),
                           'limits':['候选关联不是满足性结论；反向补回关联尚非人工确认。','结构化图解析仍不完整；语义判断依赖模型。','局部缺失不能据此确认全局遗漏；其他图正确不能抵消单图冲突。']}}
