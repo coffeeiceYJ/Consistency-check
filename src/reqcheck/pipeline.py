@@ -86,10 +86,13 @@ def unknown(requirement,notes,models=()):
             'summary':'尚无足够证据形成需求满足结论。','model_ids':list(models),'evidence':[],
             'missing_dimensions':[],'review_notes':list(notes)}
 
-def check(request,retriever,client=None,progress=None,cancelled=None):
+def check(request,retriever,client=None,progress=None,cancelled=None,relation_classifier=None,cache_dir=None):
     """Return a serializable report. Credentials and filesystem writes are outside this function."""
-    strategy=request.options.get('check_strategy','candidate_first')
-    if strategy not in ('candidate_first','full_context'): raise ValueError('Invalid check_strategy')
+    strategy=request.options.get('check_strategy','task_based')
+    if strategy not in ('task_based','candidate_first','full_context'): raise ValueError('Invalid check_strategy')
+    if client is not None and strategy=='task_based':
+        from .task_pipeline import check_tasks
+        return check_tasks(request,retriever,client,progress,cancelled,relation_classifier,cache_dir)
     if client is not None and strategy=='candidate_first':
         from .scoped_pipeline import check_scoped
         return check_scoped(request,retriever,client,progress,cancelled)

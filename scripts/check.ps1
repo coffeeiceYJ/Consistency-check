@@ -5,7 +5,11 @@
     [string]$Endpoint=$env:REQCHECK_ENDPOINT,
     [string]$Model=$env:REQCHECK_MODEL,
     [string]$KeyEnv='DEEPSEEK_API_KEY',
-    [string]$Python=''
+    [string]$Python='',
+    [ValidateSet('','auto','classified','all')][string]$Routing='',
+    [switch]$NoCache,
+    [switch]$DebugArtifacts,
+    [switch]$ExportCsv
 )
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path $PSScriptRoot -Parent
@@ -18,6 +22,10 @@ if (-not $Python) {
 }
 $checkArgs=@('-m','reqcheck','--input',$InputManifest,'--mode',$Mode)
 if ($OutputDirectory) { $checkArgs+=@('--output',$OutputDirectory) }
+if ($Routing) { $checkArgs+=@('--routing',$Routing) }
+if ($NoCache) { $checkArgs+='--no-cache' }
+if ($DebugArtifacts) { $checkArgs+='--debug' }
+if ($ExportCsv) { $checkArgs+='--export-csv' }
 if ($Mode -eq 'live') { $checkArgs+=@('--endpoint',$Endpoint,'--model',$Model,'--key-env',$KeyEnv) }
 & $Python @checkArgs
 exit $LASTEXITCODE

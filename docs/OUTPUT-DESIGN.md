@@ -1,5 +1,21 @@
 # 输出设计
 
+## 当前默认：任务式3.0
+
+默认只写report.md和report.json，分别给人阅读、给程序消费和追溯。不修改模型返回的语义结论来美化报告；原文quote由程序按有效ID和行号提取。行号真实不代表推理必然正确。
+
+report.md首先按图列出问题：主要错误位置、相关需求、要求、模型实际、反例路径、修改建议和原文；再单列建模质量建议、两维需求结论、职责外未核查项、技术失败和未完成范围。质量建议不计入业务冲突。
+
+report.json包括checkpoints、checkpoint_results、candidate_links、classified_links、links、tasks、passes、issues、quality_notes、check_scope、call_records和provenance。classified_links保留yes/no/uncertain与理由；score只属于初筛，不是概率。被排除的图不冒称已经做了一致性检查。
+
+直接路径不产生候选或分类决定，links中的unclassified只记录输入范围，不代表全关联。evidence_links才记录实际语义检查引用的模型证据；assessments.model_ids是证据涉及图，check_scope.model_ids是实际提供图。model_structure保留活动图辅助路径及未支持语法；advisory_errors记录未发布建议，不计业务错误。
+
+`--export-csv`加issues.csv；`--debug`加旧式诊断附表。CSV默认不开，避免同一结果散成很多文件。原始问题即使在定向复核格式失败时也保留，状态为待复核；没有有效保留目标不能合并删除。
+
+completed表示技术流程已完成，不是全部业务需求已被证明满足。partial表示有实际未完成或技术限制，已有问题照常保留。未发现关联、职责外、疑似遗漏、模型已正确这四种含义必须区分。旧报告保持原样。
+
+## 以下为显式旧策略的2.2输出
+
 默认 candidate_first 的 output_design_version 为2.2。主结果按问题定位图与行号，覆盖和语义一致性另作附表。
 
 | 产物 | 内容 |

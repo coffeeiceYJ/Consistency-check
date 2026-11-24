@@ -30,3 +30,6 @@ class Retriever(Protocol):
 
 class ModelClient(Protocol):
     def complete(self, system: str, payload: dict) -> dict: ...
+
+class RelationClassifier(Protocol):
+    def classify(self, pairs: list[dict], runner) -> list[dict]: ...

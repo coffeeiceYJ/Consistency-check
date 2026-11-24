@@ -15,6 +15,16 @@ def write_report(report,directory):
     path.mkdir(parents=True,exist_ok=True)
     names=('report.json','assessments.csv','links.csv','report.md','comparison.md','coverage.md','issues.json','issues.csv','execution-failures.json','call-records.json','retrieval-audit.json','scope-audit.json')
     if any((path/name).exists() for name in names): raise FileExistsError('Report files already exist; choose a new output directory')
+    if report.get('output_design_version')=='3.0' and not report.get('debug_artifacts'):
+        from .issue_reporting import issue_markdown
+        (path/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+        (path/'report.md').write_text(issue_markdown(report),encoding='utf-8')
+        if report.get('export_csv'):
+            fields=['id','model_id','requirement_ids','status','title','location','expected','observed','recommendation']
+            with (path/'issues.csv').open('w',encoding='utf-8-sig',newline='') as f:
+                writer=csv.DictWriter(f,fieldnames=fields);writer.writeheader()
+                for item in report['issues']:writer.writerow({k:cell(item.get(k,'')) for k in fields})
+        return path
     (path/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     (path/'call-records.json').write_text(json.dumps(report.get('call_records',[]),ensure_ascii=False,indent=2),encoding='utf-8')
     if 'scope_decisions' in report:

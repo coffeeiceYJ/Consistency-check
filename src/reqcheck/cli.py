@@ -13,7 +13,12 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description='需求—PlantUML 一致性检查；使用真实 LiSSA 检索组件。')
     parser.add_argument('--input',required=True,type=Path,help='JSON manifest; paths relative to manifest')
     parser.add_argument('--output',type=Path,help='New report directory')
-    parser.add_argument('--mode',choices=['rules','live'],default='rules',help='rules: explicit rules only; live: four-perspective AI checking')
+    parser.add_argument('--mode',choices=['rules','live'],default='rules',help='rules: explicit rules only; live: task-based model checking')
+    parser.add_argument('--strategy',choices=['task_based','candidate_first','full_context'],help='Override manifest strategy; omitted strategy defaults to task_based')
+    parser.add_argument('--routing',choices=['auto','classified','all'],help='auto: direct for a compact task, classify otherwise; classified/all: controlled overrides')
+    parser.add_argument('--no-cache',action='store_true',help='Disable validated stage cache')
+    parser.add_argument('--debug',action='store_true',help='Export diagnostic appendices')
+    parser.add_argument('--export-csv',action='store_true',help='Also export user issue CSV')
     parser.add_argument('--java-home',default=os.environ.get('JAVA_HOME'))
     parser.add_argument('--lissa-jar',type=Path)
     parser.add_argument('--endpoint',default=os.environ.get('REQCHECK_ENDPOINT'),help='Full HTTPS chat/completions endpoint')
@@ -27,6 +32,10 @@ def main(argv=None):
     args=parser.parse_args(argv)
     try:
         request=load_request(args.input)
+        if args.strategy: request.options['check_strategy']=args.strategy
+        if args.routing: request.options['routing_mode']=args.routing
+        if args.debug: request.options['debug_artifacts']=True
+        if args.export_csv: request.options['export_csv']=True
         if args.max_calls is not None: request.options['max_calls']=args.max_calls
         client=None; embedder=None
         if args.mode=='live':
@@ -43,11 +52,11 @@ def main(argv=None):
         retriever=LiSSARetriever(args.java_home,args.lissa_jar,embedder)
         def progress(event):
             if not args.quiet: print(json.dumps(event,ensure_ascii=False),file=sys.stderr,flush=True)
-        report=check(request,retriever,client,progress=progress)
+        report=check(request,retriever,client,progress=progress,cache_dir=None if args.no_cache else ROOT/'.reqcheck-cache')
         directory=args.output or ROOT/'outputs'/request.run_id
         path=write_report(report,directory)
         print(json.dumps({'run_status':report['run_status'],'report':str(path/'report.md'),
-                          'issues':str(path/'issues.json'),'issue_table':str(path/'issues.csv'),
+                          'structured_result':str(path/'report.json'),
                           'conflicts':report['issue_summary']['conflicts'],
                           'suspected_omissions':report['issue_summary']['suspected_omissions'],
                           'pending_review':report['issue_summary']['pending_review'],

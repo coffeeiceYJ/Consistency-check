@@ -20,3 +20,4 @@ presentation/
 .idea/
 .vscode/
 vendor/lissa/
+.reqcheck-cache/
